@@ -332,7 +332,7 @@ class DifferentialDriveModel:
         maxProb = 0
 
         for i in range(1, L):
-            covariance = np.matmul(self.getRotation(x0[2, 0]), stochasticModel.getCovariance(i * self.dt))
+            covariance = np.matmul(np.matmul(self.getRotation(x0[2, 0]), stochasticModel.getCovariance(i * self.dt)), self.getRotation(x0[2, 0]).T)
 
             for obs in obstacles:
                 offset = obs - x[i][:3, 0]
@@ -346,17 +346,16 @@ class DifferentialDriveModel:
     def isConfigurationValid(self, x0, c, obstacles):
         x = self.getStateSequence(x0, c, self.TIME_HORIZON, dt = self.dt)
         stochasticModel = self.linearize(x0, theta = 0).getStochasticModel(self.modelNoise, np.identity(5), self.measurementNoise)
-        print(len(x) * self.dt)
         L = min(len(x), int(self.TIME_HORIZON / self.dt))
 
         for i in range(1, L):
             ellipse = stochasticModel.getEllipsoid(x[i][:3, 0], i * self.dt).rotateEllipseAboutTheta(x0[2, 0])
-            # ellipse.scale(1 / 20)
 
             for obs in obstacles:
                 if ellipse.isPointInEllipse(obs):
                     print("Obstacle that Failed: \n", obs)
                     print("Ellipse: ", [ellipse.a, ellipse.b, ellipse.c])
+                    print("Pos: ", x[i])
                     return False
 
         return True
@@ -429,8 +428,7 @@ u = np.array([[12], [12]])
 
 print(drive.getSimulatedSequence(x, u, 5)[-1])
 
-c = np.array([[-3], [-7], [pi / 2]])
+c = np.array([[-0], [-7], [pi / 2]])
 obstacles = [np.array([[-12 + 0.1 * i], [-7], [0]]) for i in range(0, 240)]
 print(drive.naiveIsConfigurationValid(x, c, obstacles))
 print(drive.isConfigurationValid(x, c, obstacles))
-print(drive.probabilityOfSuccess(x, c, obstacles))
