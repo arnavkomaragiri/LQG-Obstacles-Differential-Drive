@@ -120,6 +120,13 @@ class Ellipsoid:
         mat = np.matrix(rot.from_euler('z', angle, degrees).as_matrix())
         return self.rotateEllipse(mat)
 
+    def expandEllipse(self, a, b, c):
+        self.a += a
+        self.b += b
+        self.c += c
+
+        return self
+
 class StochasticClosedFormModel:
     TIME_HORIZON = 10
     dt = 0.1
@@ -349,7 +356,7 @@ class DifferentialDriveModel:
         L = min(len(x), int(self.TIME_HORIZON / self.dt))
 
         for i in range(1, L):
-            ellipse = stochasticModel.getEllipsoid(x[i][:3, 0], i * self.dt).rotateEllipseAboutTheta(x0[2, 0])
+            ellipse = stochasticModel.getEllipsoid(x[i][:3, 0], i * self.dt).rotateEllipseAboutTheta(x0[2, 0]).expandEllipse(self.r, self.r, self.r)
 
             for obs in obstacles:
                 if ellipse.isPointInEllipse(obs):
