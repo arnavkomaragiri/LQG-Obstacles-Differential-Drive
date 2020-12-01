@@ -124,10 +124,29 @@ class Map:
                 failed = False
                 for obs in tmp.obstacles[:-1]:
                     # TODO: Implement checks for linear/circular obstacle intersections
-                    if obs[2] == 0 and tmp.obstacles[:-1][2] == 0:
+                    if obs[2] == 0 and tmp.obstacles[-1][2] == 0:
                         if np.linalg.norm(obs[0] - tmp.obstacles[-1][0]) <= obs[1] + tmp.obstacles[-1][1]:
                             failed = True
                             break
+                    elif obs[2] == 1 and tmp.obstacles[-1][2] == 0:
+                        lineVec = obs[1] - obs[0]
+                        proj = lineVec * ((tmp.obstacles[-1][0][0, 0] * lineVec[0, 0]) + (tmp.obstacles[-1][0][1, 0] * lineVec[1, 0])) / np.linalg.norm(lineVec)
+                        print("Point A to Center: \n", tmp.obstacles[-1][0] - obs[0])
+                        print("Center: \n", tmp.obstacles[-1][0])
+                        print("Point A: \n", obs[0])
+                        print("Point B: \n", obs[1])
+                        print(np.linalg.norm(tmp.obstacles[-1][0] - obs[0] - proj))
+
+                        if np.linalg.norm(tmp.obstacles[-1][0] - obs[0] - proj) <= tmp.obstacles[-1][1]:
+                            scale = ((proj[0, 0] / lineVec[0, 0]) + (proj[1, 0] / lineVec[1, 0])) / 2
+                            print(scale)
+                            if scale >= 0 and scale <= 1:
+                                failed = True
+                                break
+                            else:
+                                if np.linalg.norm(tmp.obstacles[-1][0] - obs[0]) < tmp.obstacles[-1][1] or np.linalg.norm(tmp.obstacles[-1][1] - obs[1]) < tmp.obstacles[-1][1]:
+                                    failed = True
+                                    break
 
                 if not failed:
                     res = tmp
