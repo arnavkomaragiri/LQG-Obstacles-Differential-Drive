@@ -144,7 +144,7 @@ class Map:
                                 failed = True
                                 break
                             else:
-                                if np.linalg.norm(tmp.obstacles[-1][0] - obs[0]) < tmp.obstacles[-1][1] or np.linalg.norm(tmp.obstacles[-1][1] - obs[1]) < tmp.obstacles[-1][1]:
+                                if np.linalg.norm(tmp.obstacles[-1][0] - obs[0]) < tmp.obstacles[-1][1] or np.linalg.norm(tmp.obstacles[-1][0] - obs[1]) < tmp.obstacles[-1][1]:
                                     failed = True
                                     break
 
