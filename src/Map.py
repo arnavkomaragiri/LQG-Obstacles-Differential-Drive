@@ -99,10 +99,31 @@ class Map:
 
                 failed = False
                 for obs in tmp.obstacles[:-1]:
-                    if obs[2] == 1 and tmp.obstacles[-1][2] == 1:
+                    if obs[2] == 1:
                         if intersect(obs[0], obs[1], tmp.obstacles[-1][0], tmp.obstacles[-1][1]):
                             failed = True
                             break
+                    else:
+                        lineVec = tmp.obstacles[-1][1] - tmp.obstacles[-1][0]
+                        proj = lineVec * (np.dot((obs[0] - tmp.obstacles[-1][0]).flatten(), lineVec.flatten()) / (np.linalg.norm(lineVec) ** 2))
+                        # print("Point A to Center: \n", tmp.obstacles[-1][0] - obs[0])
+                        # print("Center: \n", tmp.obstacles[-1][0])
+                        # print("Radus: ", tmp.obstacles[-1][1])
+                        # print("Point A: \n", obs[0])
+                        # print("Point B: \n", obs[1])
+                        # print("Proj: \n", proj)
+                        # print("Line Vec: \n", lineVec)
+                        # print("Orthogonal Vector: \n", tmp.obstacles[-1][0] - obs[0] - proj)
+                        # print("Dot: ", np.dot(tmp.obstacles[-1][0].flatten() - obs[0], lineVec.flatten()))
+                        # print("Scale: ", (np.dot(tmp.obstacles[-1][0].flatten() - obs[0], lineVec.flatten()) / (np.linalg.norm(lineVec) ** 2)))
+                        # print(np.linalg.norm(tmp.obstacles[-1][0] - obs[0] - proj))
+
+                        if np.linalg.norm(obs[0] - tmp.obstacles[-1][0] - proj) <= obs[1]:
+                            scale = ((proj[0, 0] / lineVec[0, 0]) + (proj[1, 0] / lineVec[1, 0])) / 2
+                            if (scale >= 0 and scale <= 1) or (np.linalg.norm(obs[0] - tmp.obstacles[-1][0]) < obs[1] or np.linalg.norm(obs[0] - tmp.obstacles[-1][1]) < obs[1]):
+                                failed = True
+                                break
+
 
                 if not failed:
                     res = tmp
@@ -123,30 +144,32 @@ class Map:
             else:
                 failed = False
                 for obs in tmp.obstacles[:-1]:
-                    # TODO: Implement checks for linear/circular obstacle intersections
-                    if obs[2] == 0 and tmp.obstacles[-1][2] == 0:
+                    if obs[2] == 0:
                         if np.linalg.norm(obs[0] - tmp.obstacles[-1][0]) <= obs[1] + tmp.obstacles[-1][1]:
                             failed = True
                             break
-                    elif obs[2] == 1 and tmp.obstacles[-1][2] == 0:
+                    else:
                         lineVec = obs[1] - obs[0]
-                        proj = lineVec * (np.dot(tmp.obstacles[-1][0].flatten(), lineVec.flatten()) / np.linalg.norm(lineVec))
+                        proj = lineVec * (np.dot((tmp.obstacles[-1][0] - obs[0]).flatten(), lineVec.flatten()) / (np.linalg.norm(lineVec) ** 2))
                         # print("Point A to Center: \n", tmp.obstacles[-1][0] - obs[0])
                         # print("Center: \n", tmp.obstacles[-1][0])
+                        # print("Radus: ", tmp.obstacles[-1][1])
                         # print("Point A: \n", obs[0])
                         # print("Point B: \n", obs[1])
+                        # print("Proj: \n", proj)
+                        # print("Line Vec: \n", lineVec)
+                        # print("Orthogonal Vector: \n", tmp.obstacles[-1][0] - obs[0] - proj)
+                        # print("Dot: ", np.dot(tmp.obstacles[-1][0].flatten() - obs[0], lineVec.flatten()))
+                        # print("Scale: ", (np.dot(tmp.obstacles[-1][0].flatten() - obs[0], lineVec.flatten()) / (np.linalg.norm(lineVec) ** 2)))
                         # print(np.linalg.norm(tmp.obstacles[-1][0] - obs[0] - proj))
 
                         if np.linalg.norm(tmp.obstacles[-1][0] - obs[0] - proj) <= tmp.obstacles[-1][1]:
                             scale = ((proj[0, 0] / lineVec[0, 0]) + (proj[1, 0] / lineVec[1, 0])) / 2
-                            print(scale)
                             if (scale >= 0 and scale <= 1) or (np.linalg.norm(tmp.obstacles[-1][0] - obs[0]) < tmp.obstacles[-1][1] or np.linalg.norm(tmp.obstacles[-1][0] - obs[1]) < tmp.obstacles[-1][1]):
                                 failed = True
                                 break
 
-                # print("Finalized Obstacle")
                 if not failed:
-                    # print("Obstacle Passed")
                     res = tmp
                     i += 1
 
