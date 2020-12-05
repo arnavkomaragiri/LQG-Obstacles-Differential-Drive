@@ -2,13 +2,19 @@ import numpy as np
 import scipy as sp
 import math
 import random
+import heapq
 
 class Map:
     dT = 0.01
 
-    def __init__(self, obstacles = [], max_dim = 10):
+    def __init__(self, obstacles = [], max_dim = 10, x = np.zeros((2, 1)), obsHeap = []):
         self.obstacles = obstacles
         self.max_dim = max_dim
+        self.x = x
+        self.obsHeap = obsHeap
+
+    def setCurrentPos(self, x):
+        return Map(obstacles = self.obstacles, max_dim = self.max_dim, x = x)
 
     def addLinearObstacle(self, p1, p2):
         return Map(obstacles = self.obstacles + [[p1, p2, 1]], max_dim = self.max_dim)
@@ -192,3 +198,13 @@ class Map:
                     base += self.dT
 
         return res
+
+    def __iter__(self):
+        obsHeap = [(np.linalg.norm(self.x - obs), obs) for obs in self.getObstacles()]
+        heapq.heapify(obsHeap)
+        return Map(obstacles = self.obstacles, max_dim = self.max_dim, x = self.x, obsHeap = obsHeap)
+
+    def __next__(self):
+        if len(self.obsHeap) > 0:
+            return heapq.heappop(self.obsHeap)[1]
+        raise StopIteration
