@@ -120,6 +120,13 @@ class Ellipsoid:
         mat = np.matrix(rot.from_euler('z', angle, degrees).as_matrix())
         return self.rotateEllipse(mat)
 
+    def expandEllipse(self, a, b, c):
+        self.a += a
+        self.b += b
+        self.c += c
+
+        return self
+
 class StochasticClosedFormModel:
     TIME_HORIZON = 10
     dt = 0.1
@@ -349,7 +356,7 @@ class DifferentialDriveModel:
         L = min(len(x), int(self.TIME_HORIZON / self.dt))
 
         for i in range(1, L):
-            ellipse = stochasticModel.getEllipsoid(x[i][:3, 0], i * self.dt).rotateEllipseAboutTheta(x0[2, 0])
+            ellipse = stochasticModel.getEllipsoid(x[i][:3, 0], i * self.dt).rotateEllipseAboutTheta(x0[2, 0]).expandEllipse(self.r, self.r, self.r)
 
             for obs in obstacles:
                 if ellipse.isPointInEllipse(obs):
@@ -374,61 +381,3 @@ class DifferentialDriveModel:
                     return False
 
         return True
-
-covariance = np.matrix([[1, 2, 3],
-                        [2, 1, 2],
-                        [3, 2, 1]])
-
-# tmpEigs = np.linalg.eig(covariance)
-# eigs = []
-# for i in range(len(tmpEigs[0])):
-#    print(abs(tmpEigs[0][i]), tmpEigs[1][i])
-#    eigs += [[abs(tmpEigs[0][i]), tmpEigs[1][i]]]
-# eigs = sorted(eigs, key = lambda x: x[0], reverse = True)
-# chi = 11.345
-# ellipse = Ellipsoid(np.zeros((3, 1)), 2 * sqrt(chi * eigs[0][0]), 2 * sqrt(chi * eigs[1][0]), 2 * sqrt(chi * eigs[2][0]), [eig[1] for eig in eigs])
-# print(ellipse.isPointInEllipse(np.zeros((3, 1))))
-# print(ellipse.isPointInEllipse(np.array([[16.5], [0], [0]])))
-# print(ellipse.isPointInEllipse(np.array([[-0.6], [-0.7], [0.3]])))
-# print(ellipse.isPointInEllipse(17 * np.array([[-0.6], [-0.7], [0.3]])))
-# print(ellipse.isPointInEllipse(np.array([[-0.5], [0], [-0.8]])))
-# print(ellipse.isPointInEllipse(18 * np.array([[-0.5], [0], [-0.8]])))
-
-# print("A: ", ellipse.a)
-# print("B: ", ellipse.b)
-# print("C: ", ellipse.c)
-
-stall_torque = 0.173 * 120
-stall_current = 9.801
-voltage = 12
-free_speed = (5475.764 / 60) * 2 * pi
-free_current = 0.355
-
-resistance = voltage / stall_current
-Kv = free_speed / (voltage - free_current * resistance)
-Kt = stall_torque / stall_current
-
-gear_ratio = 1 / 3
-
-wheel_radius = 2 / 39.37
-bot_radius = 9 / 39.37
-
-Q = 25 * np.identity(5)
-R = np.identity(2)
-
-m = 42 / 2.205
-bot_width = 18 / 39.37
-bot_length = 18 / 39.37
-
-J = (1 / 12) * m * ((bot_width ** 2) + (bot_length ** 2))
-
-drive = DifferentialDriveModel(m, bot_radius, J, Q, R, 0.00001 * np.identity(5), 0.00001 * np.identity(5), gear_ratio, Kt, Kv, resistance, wheel_radius)
-x = np.zeros((5, 1))
-u = np.array([[12], [12]])
-
-print(drive.getSimulatedSequence(x, u, 5)[-1])
-
-c = np.array([[-0], [-7], [pi / 2]])
-obstacles = [np.array([[-12 + 0.1 * i], [-7], [0]]) for i in range(0, 240)]
-print(drive.naiveIsConfigurationValid(x, c, obstacles))
-print(drive.isConfigurationValid(x, c, obstacles))
