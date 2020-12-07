@@ -17,10 +17,10 @@ class Map:
         return Map(obstacles = self.obstacles, max_dim = self.max_dim, x = x)
 
     def addLinearObstacle(self, p1, p2):
-        return Map(obstacles = self.obstacles + [[p1, p2, 1]], max_dim = self.max_dim)
+        return Map(obstacles = self.obstacles + [[p1, p2, 1]], max_dim = self.max_dim, obsHeap = self.obsHeap, x = self.x)
 
     def addCircularObstacle(self, center, radius):
-        return Map(obstacles = self.obstacles + [[center, radius, 0]], max_dim = self.max_dim)
+        return Map(obstacles = self.obstacles + [[center, radius, 0]], max_dim = self.max_dim, obsHeap = self.obsHeap, x = self.x)
 
     def addLinearObstacles(self, p1List, p2List):
         res = self
@@ -61,7 +61,7 @@ class Map:
 
         return self.addCircularObstacle(np.array([[dist * math.cos(theta)], [dist * math.sin(theta)]]), radius)
 
-    def addRandomLinearObstacles(self, n, allowIntersectingObstacles = True):
+    def addRandomLinearObstacles(self, n, allowIntersectingObstacles = False):
         res = self
         i = 0
 
@@ -137,7 +137,7 @@ class Map:
         return res
 
 
-    def addRandomCircularObstacles(self, n, max_radius, allowIntersectingObstacles = True):
+    def addRandomCircularObstacles(self, n, max_radius, allowIntersectingObstacles = False):
         res = self
         i = 0
 
@@ -181,26 +181,26 @@ class Map:
 
         return res
 
-    def getObstacles(self):
+    def getObstacles(self, randomNoiseRadius = 0):
         res = []
 
         for obs in self.obstacles:
             if obs[2] == 0:
                 theta = 0
                 while theta <= 2 * math.pi:
-                    res += [obs[0] + np.array([[obs[1] * math.cos(theta)], [obs[1] * math.sin(theta)]])]
+                    res += [obs[0] + np.array([[obs[1] * math.cos(theta)], [obs[1] * math.sin(theta)]]) + (randomNoiseRadius * np.random.rand(2, 1))]
                     theta += self.dT
             elif obs[2] == 1:
                 base = 0
                 vec = obs[1] - obs[0]
                 while base <= 1:
-                    res += [obs[0] + base * vec]
+                    res += [obs[0] + base * vec + (randomNoiseRadius * np.random.rand(2, 1))]
                     base += self.dT
 
         return res
 
     def __iter__(self):
-        obsHeap = [(np.linalg.norm(self.x - obs), obs) for obs in self.getObstacles()]
+        obsHeap = [(np.linalg.norm(self.x[:2] - obs), obs) for obs in self.getObstacles()]
         heapq.heapify(obsHeap)
         return Map(obstacles = self.obstacles, max_dim = self.max_dim, x = self.x, obsHeap = obsHeap)
 
@@ -208,3 +208,6 @@ class Map:
         if len(self.obsHeap) > 0:
             return heapq.heappop(self.obsHeap)[1]
         raise StopIteration
+
+    def isConfigurationValid(self, drive, c):
+        return drive.isConfigurationValid(self.x, c, [np.append(obs, [[0]], axis = 0) for obs in self.getObstacles()])
