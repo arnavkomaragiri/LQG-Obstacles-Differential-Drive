@@ -337,6 +337,12 @@ class DifferentialDriveModel:
 
         prob = 1.0
         maxProb = 0
+        sumProb = 0
+        sumItems = 0
+        numItems = 0
+
+        #NOTE: I hate this
+        k = 1.269522417846096e-05
 
         for i in range(1, L):
             covariance = np.matmul(np.matmul(self.getRotation(x0[2, 0]), stochasticModel.getCovariance(i * self.dt)), self.getRotation(x0[2, 0]).T)
@@ -344,10 +350,20 @@ class DifferentialDriveModel:
             for obs in obstacles:
                 offset = obs - x[i][:3, 0]
                 exponentiatedMatrix = exp(-0.5 * float(np.matmul(np.matmul(offset.T, np.linalg.inv(covariance)), offset)))
-                obstacleCollisionProbability = float(((2 * pi) ** (-covariance.shape[0] / 2)) * (np.linalg.det(covariance) ** (-1 / 2)) * exponentiatedMatrix)
+                obstacleCollisionProbability = k * (np.linalg.det(covariance) ** (-1 / 2)) * exponentiatedMatrix
 
-                prob *= (1 - obstacleCollisionProbability)
+                # maxProb = max(maxProb, obstacleCollisionProbability)
+                # sumProb += exponentiatedMatrix
+                prob *= (1 - min(1, obstacleCollisionProbability))
 
+            # if abs(sumProb) > 0.01:
+                # item = (sqrt(np.linalg.det(covariance)) / sumProb)
+                # print(item)
+                # print("Sum Prob: ", sumProb)
+                # sumItems += item
+                # numItems += 1
+
+        # print(sumItems / numItems)
         return prob
 
     def isConfigurationValid(self, x0, c, obstacles):

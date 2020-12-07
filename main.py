@@ -32,9 +32,11 @@ u = np.array([[12], [12]])
 print(drive.getSimulatedSequence(x, u, 5)[-1])
 
 c = np.array([[-0], [-7], [pi / 2]])
-obstacles = [np.array([[-12 + 0.1 * i], [-7], [0]]) for i in range(0, 240)]
+obstacles = [np.array([[-12 + 0.1 * i], [-12], [0]]) for i in range(0, 240)]
 print(drive.naiveIsConfigurationValid(x, c, obstacles))
 print(drive.isConfigurationValid(x, c, obstacles))
+print(drive.probabilityOfSuccess(x, c, obstacles))
 
-tmpMap = Map().setCurrentPos(x).addLinearObstacle(np.array([[-12], [-7]]), np.array([[12], [-7]]))
+tmpMap = Map().setCurrentPos(x).addLinearObstacle(np.array([[-12], [-12]]), np.array([[12], [-12]]))
 print(tmpMap.isConfigurationValid(drive, c))
+print(tmpMap.probabilityOfSuccess(drive, c))

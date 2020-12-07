@@ -211,3 +211,6 @@ class Map:
 
     def isConfigurationValid(self, drive, c):
         return drive.isConfigurationValid(self.x, c, [np.append(obs, [[0]], axis = 0) for obs in self.getObstacles()])
+
+    def probabilityOfSuccess(self, drive, c):
+        return drive.probabilityOfSuccess(self.x, c, [np.append(obs, [[0]], axis = 0) for obs in self.getObstacles()])
