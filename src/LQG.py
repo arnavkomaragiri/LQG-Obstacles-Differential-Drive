@@ -323,6 +323,27 @@ class DifferentialDriveModel:
                 break
         return x
 
+    def getCovarianceSequence(self, x0, c, t = -1):
+        # NOTE: I hate this even more
+        # To the professor/industry professional who has spent their entire
+        # life writing python code and is now reading this monstrosity,
+        # I apologize.
+        if t == -1:
+            t = self.TIME_HORIZON
+        stochasticModel = self.linearize(x0, theta = 0).getStochasticModel(self.modelNoise, np.identity(5), self.measurementNoise)
+        return [np.matmul(np.matmul(self.getRotation(x0[2, 0]), stochasticModel.getCovariance(i * self.dt)), self.getRotation(x0[2, 0]).T) for i in range(1, int(t / self.dt))]
+
+    def getEllipseSequence(self, x0, c, t = -1):
+        if t == -1:
+            t = self.TIME_HORIZON
+        x = self.getStateSequence(x0, c, self.TIME_HORIZON)
+        stochasticModel = self.linearize(x0, theta = 0).getStochasticModel(self.modelNoise, np.identity(5), self.measurementNoise)
+        return [stochasticModel.getEllipsoid(x[i][:3, 0], i * self.dt).rotateEllipseAboutTheta(x0[2, 0]).expandEllipse(self.r, self.r, self.r) for i in range(1, int(t / self.dt))]
+
+    def getPointCloudSequence(self, x0, c, useEllipse = False):
+        x = self.getStateSequence(x0, c, self.TIME_HORIZON)
+        return zip(x, self.getCovarianceSequence(x0, c, t = int(len(x) * self.dt)))
+
     def getSimulatedSequence(self, x0, u, t, dt = 0.1):
         x = [x0]
         for i in range(1, int(t / dt) + 1):
@@ -330,10 +351,9 @@ class DifferentialDriveModel:
 
         return x
 
-    def probabilityOfSuccess(self, x0, c, obstacles):
-        x = self.getStateSequence(x0, c, self.TIME_HORIZON, dt = self.dt)
-        stochasticModel = self.linearize(x0, theta = 0).getStochasticModel(self.modelNoise, np.identity(5), self.measurementNoise)
-        L = min(len(x), int(self.TIME_HORIZON / self.dt))
+    def probabilityOfSuccess(self, x0, c, obstacles, pointCloudSequence = []):
+        if pointCloudSequence == []:
+            pointCloudSequence = self.getPointCloudSequence(x0, c)
 
         prob = 1.0
         maxProb = 0
@@ -341,20 +361,23 @@ class DifferentialDriveModel:
         sumItems = 0
         numItems = 0
 
-        #NOTE: I hate this
+        # NOTE: I hate this
         k = 1.269522417846096e-05
 
-        for i in range(1, L):
-            covariance = np.matmul(np.matmul(self.getRotation(x0[2, 0]), stochasticModel.getCovariance(i * self.dt)), self.getRotation(x0[2, 0]).T)
+        for pointCloud in pointCloudSequence:
+            covariance = pointCloud[1]
 
             for obs in obstacles:
-                offset = obs - x[i][:3, 0]
+                offset = obs - (pointCloud[0][:3])
                 exponentiatedMatrix = exp(-0.5 * float(np.matmul(np.matmul(offset.T, np.linalg.inv(covariance)), offset)))
                 obstacleCollisionProbability = k * (np.linalg.det(covariance) ** (-1 / 2)) * exponentiatedMatrix
 
                 # maxProb = max(maxProb, obstacleCollisionProbability)
                 # sumProb += exponentiatedMatrix
                 prob *= (1 - min(1, obstacleCollisionProbability))
+
+            if prob < 0.001:
+                return 0
 
             # if abs(sumProb) > 0.01:
                 # item = (sqrt(np.linalg.det(covariance)) / sumProb)
@@ -364,24 +387,20 @@ class DifferentialDriveModel:
                 # numItems += 1
 
         # print(sumItems / numItems)
-        return prob
+        return (prob, pointCloudSequence)
 
-    def isConfigurationValid(self, x0, c, obstacles):
-        x = self.getStateSequence(x0, c, self.TIME_HORIZON, dt = self.dt)
-        stochasticModel = self.linearize(x0, theta = 0).getStochasticModel(self.modelNoise, np.identity(5), self.measurementNoise)
-        L = min(len(x), int(self.TIME_HORIZON / self.dt))
+    def isConfigurationValid(self, x0, c, obstacles, ellipseSequence = []):
+        if ellipseSequence == []:
+            ellipseSequence = self.getEllipseSequence(x0, c)
 
-        for i in range(1, L):
-            ellipse = stochasticModel.getEllipsoid(x[i][:3, 0], i * self.dt).rotateEllipseAboutTheta(x0[2, 0]).expandEllipse(self.r, self.r, self.r)
-
+        for ellipse in ellipseSequence:
             for obs in obstacles:
                 if ellipse.isPointInEllipse(obs):
-                    print("Obstacle that Failed: \n", obs)
-                    print("Ellipse: ", [ellipse.a, ellipse.b, ellipse.c])
-                    print("Pos: ", x[i])
-                    return False
+                    # print("Obstacle that Failed: \n", obs)
+                    # print("Ellipse: ", [ellipse.a, ellipse.b, ellipse.c])
+                    return (False, ellipseSequence)
 
-        return True
+        return (True, ellipseSequence)
 
     def naiveIsConfigurationValid(self, x0, c, obstacles):
         x = self.getStateSequence(x0, c, self.TIME_HORIZON, dt = self.dt)

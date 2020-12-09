@@ -26,17 +26,17 @@ bot_length = 18 / 39.37
 J = (1 / 12) * m * ((bot_width ** 2) + (bot_length ** 2))
 
 drive = DifferentialDriveModel(m, bot_radius, J, Q, R, 0.00001 * np.identity(5), 0.00001 * np.identity(5), gear_ratio, Kt, Kv, resistance, wheel_radius)
+
 x = np.zeros((5, 1))
-u = np.array([[12], [12]])
-
-print(drive.getSimulatedSequence(x, u, 5)[-1])
-
 c = np.array([[-0], [-7], [pi / 2]])
 obstacles = [np.array([[-12 + 0.1 * i], [-12], [0]]) for i in range(0, 240)]
-print(drive.naiveIsConfigurationValid(x, c, obstacles))
-print(drive.isConfigurationValid(x, c, obstacles))
-print(drive.probabilityOfSuccess(x, c, obstacles))
+
+res, ellipseSequence = drive.isConfigurationValid(x, c, obstacles)
+prob, pointCloudSequence = drive.probabilityOfSuccess(x, c, obstacles)
+
+print(res)
+print(prob)
 
 tmpMap = Map().setCurrentPos(x).addLinearObstacle(np.array([[-12], [-12]]), np.array([[12], [-12]]))
-print(tmpMap.isConfigurationValid(drive, c))
-print(tmpMap.probabilityOfSuccess(drive, c))
+print(tmpMap.isConfigurationValid(drive, c, ellipseSequence = ellipseSequence)[0])
+print(tmpMap.probabilityOfSuccess(drive, c, pointCloudSequence = pointCloudSequence)[0])

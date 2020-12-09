@@ -209,8 +209,8 @@ class Map:
             return heapq.heappop(self.obsHeap)[1]
         raise StopIteration
 
-    def isConfigurationValid(self, drive, c):
-        return drive.isConfigurationValid(self.x, c, [np.append(obs, [[0]], axis = 0) for obs in self.getObstacles()])
+    def isConfigurationValid(self, drive, c, ellipseSequence = []):
+        return drive.isConfigurationValid(self.x, c, [np.append(obs, [[0]], axis = 0) for obs in self.getObstacles()], ellipseSequence = ellipseSequence)
 
-    def probabilityOfSuccess(self, drive, c):
-        return drive.probabilityOfSuccess(self.x, c, [np.append(obs, [[0]], axis = 0) for obs in self.getObstacles()])
+    def probabilityOfSuccess(self, drive, c, pointCloudSequence = []):
+        return drive.probabilityOfSuccess(self.x, c, [np.append(obs, [[0]], axis = 0) for obs in self.getObstacles()], pointCloudSequence = pointCloudSequence)
