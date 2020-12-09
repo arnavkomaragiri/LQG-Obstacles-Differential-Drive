@@ -323,6 +323,10 @@ class DifferentialDriveModel:
                 break
         return x
 
+    def getFinalError(self, x0, c, t):
+        x = self.getStateSequence(x0, c, t)
+        return np.linalg.norm(x[-1][:3, 0] - c)
+
     def getCovarianceSequence(self, x0, c, t = -1):
         # NOTE: I hate this even more
         # To the professor/industry professional who has spent their entire
@@ -388,6 +392,14 @@ class DifferentialDriveModel:
 
         # print(sumItems / numItems)
         return (prob, pointCloudSequence)
+
+    def getValue(self, x0, c, obstacles, pointCloudSequence = []):
+        prob, pointCloudSequence = self.probabilityOfSuccess(x0, c, obstacles, pointCloudSequence)
+        finalError = self.getFinalError(x0, c, self.TIME_HORIZON)
+
+        k = -1
+
+        return (prob * exp(k * finalError), pointCloudSequence)
 
     def isConfigurationValid(self, x0, c, obstacles, ellipseSequence = []):
         if ellipseSequence == []:

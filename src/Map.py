@@ -214,3 +214,6 @@ class Map:
 
     def probabilityOfSuccess(self, drive, c, pointCloudSequence = []):
         return drive.probabilityOfSuccess(self.x, c, [np.append(obs, [[0]], axis = 0) for obs in self.getObstacles()], pointCloudSequence = pointCloudSequence)
+
+    def getValue(self, drive, c, pointCloudSequence = []):
+        return drive.getValue(self.x, c, [np.append(obs, [[0]], axis = 0) for obs in self.getObstacles()], pointCloudSequence)[0]
