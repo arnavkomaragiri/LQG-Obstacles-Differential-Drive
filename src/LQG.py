@@ -13,8 +13,15 @@ class StateSpaceModel:
         self.C = C
 
         S = sp.linalg.solve_continuous_are(a = self.A, b = self.B, q = np.matmul(np.matmul(self.C.T, self.Q[:3, :3]), self.C), r = self.R)
+        P = sp.linalg.solve_continuous_are(a = self.A, b = self.B, q = self.Q, r = self.R)
+        self.control_gain = np.linalg.solve(R, np.matmul(self.B.T, P))
         self.L = np.matmul(np.matmul(np.linalg.inv(self.R), self.B.T), S)
         self.E = np.matmul(np.matmul(np.matmul(np.linalg.inv(R), self.B.T), np.linalg.inv((np.matmul(self.B, self.L) - self.A)).T), np.matmul(self.C.T, self.Q[:3, :3]))
+        self.E[0, 2] = self.L[0, 2]
+        self.E[1, 2] = self.L[1, 2]
+        print("C: \n", self.C)
+        print("L: \n", self.L)
+        print("E: \n", self.E)
 
     def getKalmanGain(self, prioriNoise, measurementOperator, measurementNoise):
         self.P = sp.linalg.solve_continuous_are(a = self.A.T, b = measurementOperator.T, q = prioriNoise, r = measurementNoise)
@@ -260,6 +267,46 @@ class DifferentialDriveModel:
                          [a],
                          [b]])
 
+    def simulateCurvilinearModel(self, x, u):
+        v = (x[3, 0] + x[4, 0]) / 2
+        dTheta = ((x[4, 0] - x[3, 0]) / (2 * self.r)) * self.dt
+
+        G1 = ((1 / self.m) + ((self.r ** 2) / self.J))
+        G2 = ((1 / self.m) - ((self.r ** 2) / self.J))
+
+        a = G1 * self.C[0] * x[3, 0] + G2 * self.C[2] * x[4, 0] + G1 * self.C[1] * u[0, 0] + G2 * self.C[3] * u[1, 0]
+        b = G2 * self.C[0] * x[3, 0] + G1 * self.C[2] * x[4, 0] + G2 * self.C[1] * u[0, 0] + G1 * self.C[3] * u[1, 0]
+
+        sinTerm = 1
+        cosTerm = 0
+
+        if dTheta > 0.001: # TODO: Convert this to an epsilon at some point
+            sinTerm = sin(dTheta) / dTheta
+            cosTerm = (1 - cos(dTheta)) / dTheta
+
+        dX = np.array([[sinTerm * v * self.dt],
+                       [cosTerm * v * self.dt],
+                       [dTheta],
+                       [a * self.dt],
+                       [b * self.dt]])
+
+        return x + np.matmul(self.getRotation5d(x[2, 0]), dX)
+
+    def collisionProb(self, x, covariance, obstacles):
+        normalizationFactor = 1 / sqrt(2 * pi) # TODO: Please tune the normalization factor bc we all know this 1 / sqrt(2pi) value is garbage
+        totalSuccessProb = 1.0
+
+        for obs in obstacles:
+            offset = obs - x
+            probOfCollision = normalizationFactor * (1 / sqrt(np.linalg.det(covariance))) * exp(-0.5 * np.matmul(np.matmul(offset.T, np.linalg.inv(covariance)), offset))
+            totalSuccessProb *= (1 - min(1, probOfCollision))
+
+        return (1 - totalSuccessProb)
+
+    def cost(self, x, u, covariance, obstacles, nextValue = 0, alpha = 1, gamma = 0.5): # TODO: Tune hyperparameters on bellman cost function
+        nextState = self.simulateCurvilinearModel(x, u)
+        return np.matmul(np.matmul(nextState[:3, 0].T, self.Q[:3, :3]), nextState[:3, 0]) + alpha * self.collisionProb(nextState[:2, 0], covariance, obstacles) + (gamma * nextValue)
+
     def getRotation(self, theta):
         return np.matrix([[cos(theta), -sin(theta), 0],
                           [sin(theta),  cos(theta), 0],
@@ -276,19 +323,26 @@ class DifferentialDriveModel:
     def rk4Predict(self, x, c, dt):
         model = self.linearize(x, theta = 0)
         c = np.matmul(self.getRotation(-x[2, 0]), c)
-        u = -np.matmul(model.L, x) + np.matmul(model.E, c)
+        c[2, 0] -= x[2, 0]
+        theta = x[2, 0]
+        x[2, 0] = 0
+        print("Error: ", c[2, 0])
+        u = np.clip(-np.matmul(model.L, x) + np.matmul(model.E, c), -12, 12)
+        print(u)
         k1 = self.evaluateNLModel(x, u)
         k2 = self.evaluateNLModel(x + 0.5 * dt * k1, u)
         k3 = self.evaluateNLModel(x + 0.5 * dt * k2, u)
         k4 = self.evaluateNLModel(x + 0.5 * dt * k3, u)
 
         dx = (1 / 6) * dt * (k1 + (2 * k2) + (2 * k3) + k4)
+        print("dX: ", dx)
         dTheta = dx[2, 0]
-        dx = np.matmul(self.getRotation5d(dTheta), np.matmul(self.getPoseExponential(dTheta), np.matmul(self.getRotation5d(-dTheta), dx)))
+        dx = np.matmul(self.getRotation5d(theta), np.matmul(self.getPoseExponential(dTheta), np.matmul(self.getRotation5d(-dTheta), dx)))
+        x[2, 0] = theta
         return x + dx
 
     def getPoseExponential(self, omega):
-        if abs(omega) < 0.001:
+        if abs(omega) < 0.1:
             return np.identity(5)
         else:
             return np.matrix([[sin(omega) / omega, (cos(omega) - 1) / omega, 0, 0, 0],
@@ -346,7 +400,7 @@ class DifferentialDriveModel:
 
     def getPointCloudSequence(self, x0, c, useEllipse = False):
         x = self.getStateSequence(x0, c, self.TIME_HORIZON)
-        return zip(x, self.getCovarianceSequence(x0, c, t = int(len(x) * self.dt)))
+        return list(zip(x, self.getCovarianceSequence(x0, c, t = int(len(x) * self.dt))))
 
     def getSimulatedSequence(self, x0, u, t, dt = 0.1):
         x = [x0]
