@@ -216,6 +216,7 @@ class StochasticClosedFormModel:
 class DifferentialDriveModel:
     dt = 0.1
     TIME_HORIZON = 40
+    EPSILON = 0.001
 
     def __init__(self, m, r, J, Q, R, modelNoise, measurementNoise, gear_ratio, Kt, Kv, resistance, wheel_radius):
         C = [-((gear_ratio ** 2) * Kt) / (Kv * resistance * (wheel_radius ** 2)),
@@ -280,7 +281,7 @@ class DifferentialDriveModel:
         sinTerm = 1
         cosTerm = 0
 
-        if dTheta > 0.001: # TODO: Convert this to an epsilon at some point
+        if dTheta > self.EPSILON:
             sinTerm = sin(dTheta) / dTheta
             cosTerm = (1 - cos(dTheta)) / dTheta
 
@@ -292,20 +293,89 @@ class DifferentialDriveModel:
 
         return x + np.matmul(self.getRotation5d(x[2, 0]), dX)
 
-    def collisionProb(self, x, covariance, obstacles):
+    def gradientOfFutureStateToControl(self, x):
+        G1 = ((1 / self.m) + ((self.r ** 2) / self.J))
+        G2 = ((1 / self.m) - ((self.r ** 2) / self.J))
+
+        return np.matmul(self.getRotation5d(x[2, 0]), np.matrix([[0, 0],
+                                                                 [0, 0],
+                                                                 [G1 * self.C[1], G2 * self.C[3]],
+                                                                 [G2 * self.C[1], G1 * self.C[3]]])
+    def jacobianOfFutureStateToState(self, x):
+        v = (x[3, 0] + x[4, 0]) / 2
+        dTheta = ((x[4, 0] - x[3, 0]) / (2 * self.r)) * self.dt
+        gradDThetaVL = -self.dt / (2 * self.r)
+        gradDThetaVR = self.dt / (2 * self.r)
+
+        G1 = ((1 / self.m) + ((self.r ** 2) / self.J))
+        G2 = ((1 / self.m) - ((self.r ** 2) / self.J))
+
+        a = G1 * self.C[0] * x[3, 0] + G2 * self.C[2] * x[4, 0] + G1 * self.C[1] * u[0, 0] + G2 * self.C[3] * u[1, 0]
+        b = G2 * self.C[0] * x[3, 0] + G1 * self.C[2] * x[4, 0] + G2 * self.C[1] * u[0, 0] + G1 * self.C[3] * u[1, 0]
+
+        sinTerm = 1
+        cosTerm = 0
+
+        A0 = 0.5 * dt
+        A1 = 0.5 * dt
+        A2 = 0
+        A3 = 0
+
+        if dTheta > self.EPSILON:
+            sinTerm = sin(dTheta) / dTheta
+            cosTerm = (1 - cos(dTheta)) / dTheta
+
+            A0 = (v * self.dt * ((dTheta * cos(dTheta) * gradDThetaVL) - (sin(dTheta) * gradDThetaVL)) / (dTheta ** 2)) + (0.5 * self.dt * sin(dTheta) / dTheta)
+            A1 = (v * self.dt * ((dTheta * cos(dTheta) * gradDThetaVR) - (sin(dTheta) * gradDThetaVR)) / (dTheta ** 2)) + (0.5 * self.dt * sin(dTheta) / dTheta)
+            A2 = (v * self.dt * ((dTheta * sin(dTheta) * gradDThetaVL) - ((1 - cos(dTheta)) * gradDThetaVL)) / (dTheta ** 2)) + (0.5 * self.dt * (1 - cos(dTheta)) / dTheta)
+            A3 = (v * self.dt * ((dTheta * sin(dTheta) * gradDThetaVR) - ((1 - cos(dTheta)) * gradDThetaVR)) / (dTheta ** 2)) + (0.5 * self.dt * (1 - cos(dTheta)) / dTheta)
+
+        gradDeltaToState = np.matrix([[0, 0, 0, A0, A1],
+                                      [0, 0, 0, A2, A3],
+                                      [0, 0, 0, -0.5 * self.r, 0.5, self.r],
+                                      [0, 0, 0, G1 * self.C[0], G2 * self.C[2]],
+                                      [0, 0, 0, G2 * self.C[0], G1 * self.C[2]]])
+        derivRotationToState = np.matrix([[-sin(x[2, 0]), -cos(x[2, 0]), 0, 0, 0],
+                                          [cos(x[2, 0]), -sin(x[2, 0]), 0, 0, 0],
+                                          [0, 0, 0, 0, 0],
+                                          [0, 0, 0, 0, 0],
+                                          [0, 0, 0, 0, 0]])
+        dX = np.array([[sinTerm * v * self.dt],
+                       [cosTerm * v * self.dt],
+                       [dTheta],
+                       [a * self.dt],
+                       [b * self.dt]])
+
+        return np.identity(5) + np.matmul(self.getRotation5d(x[2, 0]), gradDeltaToState) + np.matmul(derivRotationToState, dX)
+
+    def getSingleObsCollisionProb(self, x, covariance, obs):
         normalizationFactor = 1 / sqrt(2 * pi) # TODO: Please tune the normalization factor bc we all know this 1 / sqrt(2pi) value is garbage
+        offset = obs - x
+        return normalizationFactor * (1 / sqrt(np.linalg.det(covariance))) * exp(-0.5 * np.matmul(np.matmul(offset.T, np.linalg.inv(covariance)), offset))
+
+    def collisionProb(self, x, covariance, obstacles):
         totalSuccessProb = 1.0
 
         for obs in obstacles:
-            offset = obs - x
-            probOfCollision = normalizationFactor * (1 / sqrt(np.linalg.det(covariance))) * exp(-0.5 * np.matmul(np.matmul(offset.T, np.linalg.inv(covariance)), offset))
+            probOfCollision = self.getSingleObsCollisionProb(x, covariance, obs)
             totalSuccessProb *= (1 - min(1, probOfCollision))
 
         return (1 - totalSuccessProb)
 
-    def cost(self, x, u, covariance, obstacles, nextValue = 0, alpha = 1, gamma = 0.5): # TODO: Tune hyperparameters on bellman cost function
+    def gradientProbToState(self, x, covariance, obstacles):
+        grad = np.zeros((2, 1))
+
+        for obs in obstacles:
+            grad += self.getSingleObsCollisionProb(x, covariance, obs) * np.matmul(np.linalg.inv(covariance), obs - x)
+        return grad
+
+    def cost(self, x, u, c, covariance, obstacles, nextValue = 0, alpha = 1, gamma = 0.5): # TODO: Tune hyperparameters on bellman cost function
         nextState = self.simulateCurvilinearModel(x, u)
-        return np.matmul(np.matmul(nextState[:3, 0].T, self.Q[:3, :3]), nextState[:3, 0]) + alpha * self.collisionProb(nextState[:2, 0], covariance, obstacles) + (gamma * nextValue)
+        return np.matmul(np.matmul((c - nextState[:3, 0]).T, self.Q[:3, :3]), (c - nextState[:3, 0])) + alpha * self.collisionProb(nextState[:2, 0], covariance, obstacles) + (gamma * nextValue)
+
+    def gradientCostToState(self, x, u, c, covariance, obstacles, nextGradient = np.zeros(1, 5), alpha = 1, gamma = 0.5):
+        nextState = self.simulateCurvilinearModel(x, u)
+        return -2 * np.matmul((c - nextState[:3, 0]).T, self.Q[:3, :3]) + (alpha * self.gradientProbToState(nextState[:2, 0], covariance, obstacles)) + (gamma * nextGradient)
 
     def getRotation(self, theta):
         return np.matrix([[cos(theta), -sin(theta), 0],
@@ -326,7 +396,7 @@ class DifferentialDriveModel:
         c[2, 0] -= x[2, 0]
         theta = x[2, 0]
         x[2, 0] = 0
-        print("Error: ", c[2, 0])
+        # print("Error: ", c[2, 0])
         u = np.clip(-np.matmul(model.L, x) + np.matmul(model.E, c), -12, 12)
         print(u)
         k1 = self.evaluateNLModel(x, u)
@@ -335,7 +405,7 @@ class DifferentialDriveModel:
         k4 = self.evaluateNLModel(x + 0.5 * dt * k3, u)
 
         dx = (1 / 6) * dt * (k1 + (2 * k2) + (2 * k3) + k4)
-        print("dX: ", dx)
+        # print("dX: ", dx)
         dTheta = dx[2, 0]
         dx = np.matmul(self.getRotation5d(theta), np.matmul(self.getPoseExponential(dTheta), np.matmul(self.getRotation5d(-dTheta), dx)))
         x[2, 0] = theta
