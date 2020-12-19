@@ -373,9 +373,34 @@ class DifferentialDriveModel:
         nextState = self.simulateCurvilinearModel(x, u)
         return np.matmul(np.matmul((c - nextState[:3, 0]).T, self.Q[:3, :3]), (c - nextState[:3, 0])) + alpha * self.collisionProb(nextState[:2, 0], covariance, obstacles) + (gamma * nextValue)
 
-    def gradientCostToState(self, x, u, c, covariance, obstacles, nextGradient = np.zeros(1, 5), alpha = 1, gamma = 0.5):
+    def gradientCostToState(self, x, u, c, covariance, obstacles, nextGradient = np.zeros((1, 5)), alpha = 1, gamma = 0.5):
         nextState = self.simulateCurvilinearModel(x, u)
         return -2 * np.matmul((c - nextState[:3, 0]).T, self.Q[:3, :3]) + (alpha * self.gradientProbToState(nextState[:2, 0], covariance, obstacles)) + (gamma * nextGradient)
+
+    def gradientCostToControlInput(self, x, u, c, covariance, obstacles, nextGradient = np.zeros((1, 5)), alpha = 1, gamma = 0.5):
+        return np.matmul(self.gradientCostToState(x, u, c, covariance, obstacles, nextGradient, alpha, gamma), self.gradientOfFutureStateToControl(x))
+
+    def getGradientMethod(self, x0, c, covariance, obstacles, nextGradient = np.zeros((1, 5)), alpha = 1, gamma = 0.5):
+        def gradient(x):
+            return self.gradientCostToControlInput(x0, x, c, covariance, obstacles, nextGradient, alpha, gamma)
+        return gradient
+
+    def getCostMethod(self, x0, c, covariance, obstacles, nextValue = 0, alpha = 1, gamma = 0.5):
+        def cost(x):
+            return self.cost(x0, x, c, covariance, obstacles, nextValue, alpha, gamma)
+        return cost
+
+    def backwardsPass(self, trajectory, c, obstacles, alpha = 1, gamma = 0.5):
+        grad = np.matmul(self.gradientCostToState(trajectory[-1][0], trajectory[-1][1], c, trajectory[-1][2], obstacles, alpha = alpha, gamma = gamma), self.jacobianFutureStateToState(trajectory[-2][0]))
+        for i in range(len(trajectory), 0, -1):
+            x, u, covariance = trajectory[i][0], trajectory[i][1], trajectory[i][2]
+            cost = self.getCostMethod(x, c, covariance, obstacles, alpha, gamma)
+            gradient = self.getGradientMethod(x, c, covariance, obstacles, nextGradient = grad, alpha = alpha, gamma = gamma)
+
+            # INSERT OPTIMIZATION LOGIC
+
+            grad= self.gradientCostToControlInput(x, u, c, covariance, obstacles, nextGradient = grad, alpha = alpha, gamma = gamma)
+        return trajectory
 
     def getRotation(self, theta):
         return np.matrix([[cos(theta), -sin(theta), 0],
