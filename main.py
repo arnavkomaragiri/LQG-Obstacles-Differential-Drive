@@ -33,11 +33,11 @@ x[2, 0] = math.pi / 2
 c = np.array([[-0], [-2], [math.pi / 2]])
 obstacles = [np.array([[-12 + 0.1 * i], [-12], [0]]) for i in range(0, 240)]
 
-res, ellipseSequence = drive.isConfigurationValid(x, c, obstacles)
-prob, pointCloudSequence = drive.probabilityOfSuccess(x, c, obstacles)
+# res, ellipseSequence = drive.isConfigurationValid(x, c, obstacles)
+# prob, pointCloudSequence = drive.probabilityOfSuccess(x, c, obstacles)
 
-print(res)
-print(prob)
+# print(res)
+# print(prob)
 
 tmpMap = Map().setCurrentPos(x).addLinearObstacle(np.array([[-5], [-5]]), np.array([[5], [-5]]))
 obs = tmpMap.getObstacles()
@@ -46,9 +46,15 @@ plt.plot([ox], [oy], marker = 'o', markerSize = 3, color = 'red')
 plt.plot([x[0, 0]], [x[1, 0]], marker = 'o', markerSize = 3, color = 'blue')
 plt.plot([c[0, 0]], [c[1, 0]], marker = 'o',  markerSize = 3, color = 'green')
 
-px, py = [point[0][0, 0] for point in pointCloudSequence], [point[0][1, 0] for point in pointCloudSequence]
-plt.plot([px], [py], marker = 'o', markerSize = 3, color = 'blue')
+# px, py = [point[0][0, 0] for point in pointCloudSequence], [point[0][1, 0] for point in pointCloudSequence]
+# plt.plot([px], [py], marker = 'o', markerSize = 3, color = 'blue')
 
-print(tmpMap.isConfigurationValid(drive, c, ellipseSequence = ellipseSequence)[0])
-print(tmpMap.probabilityOfSuccess(drive, c, pointCloudSequence = pointCloudSequence)[0])
-plt.show()
+# print(tmpMap.isConfigurationValid(drive, c, ellipseSequence = ellipseSequence)[0])
+# print(tmpMap.probabilityOfSuccess(drive, c, pointCloudSequence = pointCloudSequence)[0])
+# plt.show()
+
+cost = drive.getCostMethod(np.zeros((5, 1)), np.array([[2], [0], [0], [2], [2]]), 0.01 * np.identity(5), [])
+gradient = drive.getGradientMethod(np.zeros((5, 1)), np.array([[2], [0], [0], [2], [2]]), 0.01 * np.identity(5), [])
+u = np.array([0, 0])
+bounds = Bounds([-12, 12], [-12, 12])
+res = minimize(cost, u, method = 'trust-constr', jac = gradient, hess = SR1(), bounds = bounds, options = {'verbose':1})
