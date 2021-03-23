@@ -356,7 +356,7 @@ class DifferentialDriveModel:
 
     def getSingleObsCollisionProb(self, x, covariance, obs):
         normalizationFactor = 1 / sqrt(2 * pi) # TODO: Please tune the normalization factor bc we all know this 1 / sqrt(2pi) value is garbage
-        offset = obs - x
+        offset = np.concatenate((obs, np.zeros((3, 1))), axis=0) - x
         return normalizationFactor * (1 / sqrt(np.linalg.det(covariance))) * exp(-0.5 * np.matmul(np.matmul(offset.T, np.linalg.inv(covariance)), offset))
 
     def collisionProb(self, x, covariance, obstacles):
@@ -372,7 +372,7 @@ class DifferentialDriveModel:
         grad = np.zeros((5, 1))
 
         for obs in obstacles:
-            grad += self.getSingleObsCollisionProb(x, covariance, obs) * np.matmul(np.linalg.inv(covariance), obs - x)
+            grad += self.getSingleObsCollisionProb(x, covariance, obs) * np.matmul(np.linalg.inv(covariance), np.concatenate((obs, np.zeros((3, 1))), axis=0) - x)
         # print("Prob To State: ", grad)
         return grad
 
@@ -381,7 +381,10 @@ class DifferentialDriveModel:
         return None
 
     def cost(self, x, u, c, covariance, obstacles, nextValue = 0, alpha = 1, gamma = 0.5): # TODO: Tune hyperparameters on bellman cost function
+        # print("U: \n", u, u.shape)
         nextState = self.simulateCurvilinearModel(x, u)
+        # print(nextState.shape)
+        # print(np.linalg.norm(c - nextState))
         return np.matmul(np.matmul((c - nextState).T, self.Q), (c - nextState)) + alpha * self.collisionProb(nextState, covariance, obstacles) + (gamma * nextValue)
 
     def gradientCostToState(self, x, u, c, covariance, obstacles, nextGradient = np.zeros((5, 1)), alpha = 1, gamma = 0.5):
@@ -424,7 +427,6 @@ class DifferentialDriveModel:
     def getCostMethod(self, x0, c, covariance, obstacles, nextValue = 0, alpha = 1, gamma = 0.5):
         def cost(x):
             res = self.cost(x0, x.T, c, covariance, obstacles, nextValue = nextValue, alpha = alpha, gamma = gamma)
-            # print("Cost: ", res[0, 0])
             return res[0, 0]
         return cost
 
