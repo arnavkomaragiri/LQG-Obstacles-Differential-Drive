@@ -3,6 +3,8 @@ from src.Map import *
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.ticker import LinearLocator
+from scipy.optimize import BFGS
+import time
 
 stall_torque = 0.173 * 120
 stall_current = 9.801
@@ -56,28 +58,28 @@ ox, oy = [vector[0, 0] for vector in obs], [vector[1, 0] for vector in obs]
 # plt.show()
 
 x0 = np.zeros((5, 1))
-cost = drive.getCostMethod(x0, c, 0.01 * np.identity(5), [])
-throwaway_cost = lambda x: (c - x).T @ Q @ (c - x)
-gradient = drive.getGradientMethod(x0, c, 0.01 * np.identity(5), [])
+cost = drive.getCostMethod(x0, c, 0.01 * np.identity(5), obs)
+gradient = drive.getGradientMethod(x0, c, 0.01 * np.identity(5), obs)
 u = np.array([12, 12])
-bounds = Bounds([-12, 12], [-12, 12])
-res = minimize(cost, u, method = 'trust-constr', jac = gradient, hess = SR1(), bounds = bounds, options = {'verbose':3})
+bounds = Bounds([-12, -12], [12, 12])
+
+start = time.time()
+# res = minimize(cost, u, method = 'BFGS', jac = gradient, options = {'disp':True})
+res = minimize(cost, u, method = 'SLSQP', jac = gradient, hess = SR1(), bounds = bounds, options = {'disp':True})
+end = time.time()
 
 print(res.x)
 print(drive.simulateCurvilinearModel(np.zeros((5, 1)), res.x))
 
 fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-x = np.arange(-12, 12, 0.1)
-y = np.arange(-12, 12, 0.1)
+x = np.arange(-12, 12, 0.25)
+y = np.arange(-12, 12, 0.25)
 x, y = np.meshgrid(x, y)
 positions = np.vstack([x.ravel(), y.ravel()])
 z = np.array([cost(u) for u in positions.T]).reshape(x.shape)
 gz = np.array([np.linalg.norm(gradient(u)) for u in positions.T]).reshape(x.shape)
-throwaway_z = np.array([throwaway_cost(drive.simulateCurvilinearModel(x0, i.T)) for i in positions.T]).reshape(x.shape)
-surf = ax.plot_surface(x, y, gz, cmap=cm.coolwarm,
+surf = ax.plot_surface(x, y, z, cmap=cm.coolwarm,
                        linewidth=0, antialiased=False)
-# surf2 = ax.plot_surface(x, y, throwaway_z, cmap=cm.coolwarm,
-#                        linewidth=0, antialiased=False)
 ax.zaxis.set_major_locator(LinearLocator(10))
 ax.zaxis.set_major_formatter('{x:.02f}')
 fig.colorbar(surf, shrink=0.5, aspect=5)

@@ -427,6 +427,7 @@ class DifferentialDriveModel:
     def getCostMethod(self, x0, c, covariance, obstacles, nextValue = 0, alpha = 1, gamma = 0.5):
         def cost(x):
             res = self.cost(x0, x.T, c, covariance, obstacles, nextValue = nextValue, alpha = alpha, gamma = gamma)
+            # print(x, "\n", res[0, 0])
             return res[0, 0]
         return cost
 
@@ -434,16 +435,16 @@ class DifferentialDriveModel:
         grad = np.matmul(self.gradientCostToState(trajectory[-1][0], trajectory[-1][1], c, trajectory[-1][2], obstacles, alpha = alpha, gamma = gamma), self.jacobianFutureStateToState(trajectory[-2][0]))
         # hess = self.hessianCostToState(trajectory[-1][0], trajectory[-1][1], c, trajectory[-1][2], obstacles, alpha = alpha, gamma = gamma)
         isTrajectoryOptimized = False
+        bounds = Bounds([-12, -12], [12, 12])
         for i, trajState in reversed(list(enumerate(trajectory))):
             x, u, covariance = trajState[0], trajState[1], trajState[2]
             cost = self.getCostMethod(x, c, covariance, obstacles, alpha, gamma)
             gradient = self.getGradientMethod(x, c, covariance, obstacles, nextGradient = grad, alpha = alpha, gamma = gamma)
             # hessian = self.getHessianMethod(x, c, covariance, obstacles, nextHessian = hess, alpha = alpha, gamma = gamma)
 
-            bounds = Bounds([-12, 12], [-12, 12])
             # TODO: Potentially explore using BFGS() for hessian estimation of SR1 fails.
             # TODO: If the hessian stuff works, use that as the hessian estimates will likely beat SR1 speed-wise
-            res = minimize(cost, u, method = 'trust-constr', jac = gradient, hess = SR1(), bounds = bounds)
+            res = minimize(cost, u, method = 'SLSQP', jac = gradient, hess = SR1(), bounds = bounds)
 
             trajectory[i][1] = res.x
 
