@@ -3,6 +3,8 @@ from scipy.spatial.transform import Rotation as rot
 from scipy.optimize import Bounds, SR1, minimize
 import numpy as np
 from math import *
+from numba.experimental import jitclass
+from numba import int32, float32, float64, types
 
 class StateSpaceModel:
     def __init__(self, A, B, C, Q, R):
@@ -214,16 +216,31 @@ class StochasticClosedFormModel:
 
         return True
 
+spec = [
+    ('dt', float32),
+    ('TIME_HORIZON', int32),
+    ('EPSILON', float32),
+    ('m', float64),
+    ('r', float64),
+    ('J', float64),
+    ('C', float64[:]),
+    ('Q', float64[:, :]),
+    ('R', float64[:, :]),
+    ('modelNoise', float64[:, :]),
+    ('measurementNoise', float64[:, :]),
+    ('gear_ratio', float64),
+    ('Kt', float64),
+    ('Kv', float64),
+    ('resistance', float64),
+    ('wheel_radius', float64)
+]
+# @jitclass(spec)
 class DifferentialDriveModel:
-    dt = 0.1
-    TIME_HORIZON = 40
-    EPSILON = 0.001
-
     def __init__(self, m, r, J, Q, R, modelNoise, measurementNoise, gear_ratio, Kt, Kv, resistance, wheel_radius):
-        C = [-((gear_ratio ** 2) * Kt) / (Kv * resistance * (wheel_radius ** 2)),
+        C = np.array([-((gear_ratio ** 2) * Kt) / (Kv * resistance * (wheel_radius ** 2)),
              (gear_ratio * Kt) / (resistance * r),
              -((gear_ratio ** 2) * Kt) / (Kv * resistance * (wheel_radius ** 2)),
-             (gear_ratio * Kt) / (resistance * r)]
+             (gear_ratio * Kt) / (resistance * r)])
         self.m = m
         self.r = r
         self.J = J
@@ -232,6 +249,9 @@ class DifferentialDriveModel:
         self.R = R
         self.modelNoise = modelNoise
         self.measurementNoise = measurementNoise
+        self.dt = 0.1
+        self.TIME_HORIZON = 40
+        self.EPSILON = 0.001
 
     def linearize(self, x, theta = 0):
         v = (x[3, 0] + x[4, 0]) / 2
@@ -271,6 +291,7 @@ class DifferentialDriveModel:
 
     def simulateCurvilinearModel(self, x, u):
         # print("U: ", u)
+        u = u.flatten()
         v = (x[3, 0] + x[4, 0]) / 2
         dTheta = ((x[4, 0] - x[3, 0]) / (2 * self.r)) * self.dt
 
@@ -293,7 +314,7 @@ class DifferentialDriveModel:
                        [a * self.dt],
                        [b * self.dt]])
 
-        return x + np.matmul(self.getRotation5d(x[2, 0]), dX)
+        return np.asarray(x + np.matmul(self.getRotation5d(x[2, 0]), dX))
 
     def gradientOfFutureStateToControl(self, x):
         G1 = ((1 / self.m) + ((self.r ** 2) / self.J))
@@ -307,23 +328,24 @@ class DifferentialDriveModel:
         # print("Future State To Control: \n", res)
         return res
 
-    def jacobianOfFutureStateToState(self, x):
+    def jacobianOfFutureStateToState(self, x, u):
         v = (x[3, 0] + x[4, 0]) / 2
         dTheta = ((x[4, 0] - x[3, 0]) / (2 * self.r)) * self.dt
         gradDThetaVL = -self.dt / (2 * self.r)
         gradDThetaVR = self.dt / (2 * self.r)
+        u = u.flatten()
 
         G1 = ((1 / self.m) + ((self.r ** 2) / self.J))
         G2 = ((1 / self.m) - ((self.r ** 2) / self.J))
 
-        a = G1 * self.C[0] * x[3, 0] + G2 * self.C[2] * x[4, 0] + G1 * self.C[1] * u[0, 0] + G2 * self.C[3] * u[1, 0]
-        b = G2 * self.C[0] * x[3, 0] + G1 * self.C[2] * x[4, 0] + G2 * self.C[1] * u[0, 0] + G1 * self.C[3] * u[1, 0]
+        a = G1 * self.C[0] * x[3, 0] + G2 * self.C[2] * x[4, 0] + G1 * self.C[1] * u[0] + G2 * self.C[3] * u[1]
+        b = G2 * self.C[0] * x[3, 0] + G1 * self.C[2] * x[4, 0] + G2 * self.C[1] * u[0] + G1 * self.C[3] * u[1]
 
         sinTerm = 1
         cosTerm = 0
 
-        A0 = 0.5 * dt
-        A1 = 0.5 * dt
+        A0 = 0.5 * self.dt
+        A1 = 0.5 * self.dt
         A2 = 0
         A3 = 0
 
@@ -338,19 +360,19 @@ class DifferentialDriveModel:
 
         gradDeltaToState = np.matrix([[0, 0, 0, A0, A1],
                                       [0, 0, 0, A2, A3],
-                                      [0, 0, 0, -0.5 * self.r, 0.5, self.r],
+                                      [0, 0, 0, -0.5 * self.r, 0.5 * self.r],
                                       [0, 0, 0, G1 * self.C[0], G2 * self.C[2]],
-                                      [0, 0, 0, G2 * self.C[0], G1 * self.C[2]]])
+                                      [0, 0, 0, G2 * self.C[0], G1 * self.C[2]]], dtype=float)
         derivRotationToState = np.matrix([[-sin(x[2, 0]), -cos(x[2, 0]), 0, 0, 0],
                                           [cos(x[2, 0]), -sin(x[2, 0]), 0, 0, 0],
                                           [0, 0, 0, 0, 0],
                                           [0, 0, 0, 0, 0],
-                                          [0, 0, 0, 0, 0]])
+                                          [0, 0, 0, 0, 0]], dtype=float)
         dX = np.array([[sinTerm * v * self.dt],
                        [cosTerm * v * self.dt],
                        [dTheta],
                        [a * self.dt],
-                       [b * self.dt]])
+                       [b * self.dt]], dtype=float)
 
         return np.identity(5) + np.matmul(self.getRotation5d(x[2, 0]), gradDeltaToState) + np.matmul(derivRotationToState, dX)
 
@@ -377,30 +399,33 @@ class DifferentialDriveModel:
         return grad
 
     def hessianProbToState(self, x, covariance, obstacles):
-        # TODO: Implement hessian of gaussian PDF
-        return None
+        hess = np.zeros((5, 5))
+        precision = np.linalg.inv(covariance)
+        for obs in obstacles:
+            offset = obs - x
+            hess += self.getSingleObsCollisionProb(x, covariance, obs) * (precision @ (np.identity(5) + (offset @ offset.T @ precision.T)))
+        return hess
 
     def cost(self, x, u, c, covariance, obstacles, nextValue = 0, alpha = 1, gamma = 0.5): # TODO: Tune hyperparameters on bellman cost function
-        # print("U: \n", u, u.shape)
         nextState = self.simulateCurvilinearModel(x, u)
-        # print(nextState.shape)
-        # print(np.linalg.norm(c - nextState))
         return np.matmul(np.matmul((c - nextState).T, self.Q), (c - nextState)) + alpha * self.collisionProb(nextState, covariance, obstacles) + (gamma * nextValue)
 
-    def gradientCostToState(self, x, u, c, covariance, obstacles, nextGradient = np.zeros((5, 1)), alpha = 1, gamma = 0.5):
+    def gradientCostToState(self, x, u, c, covariance, obstacles, nextJacobian = np.zeros((1, 5)), alpha = 1, gamma = 0.5):
+        if nextJacobian.shape != (1, 5):
+            print(nextJacobian)
+            raise ValueError("Incorrect Shape for Next Gradient")
         nextState = self.simulateCurvilinearModel(x, u)
-        # print("Next State: ", nextState)
-        res = -2 * np.matmul(self.Q, c - nextState) + (alpha * self.gradientProbToState(nextState, covariance, obstacles)) + (gamma * nextGradient.T)
-        # print("Cost To State: \n", res)
+        # TODO: Implement hessian of gaussian PDF
+        res = -2 * np.matmul(self.Q, c - nextState) + (alpha * self.gradientProbToState(nextState, covariance, obstacles)) + (gamma * nextJacobian.T)
         return res
 
     def hessianCostToState(self, x, u, c, covariance, obstacles, nextHessian = np.zeros((5, 5)), alpha = 1, gamma = 0.5):
         nextState = self.simulateCurvilinearModel(x, u)
-        jacobianState = self.jacobianOfFutureStateToState(x)
+        jacobianState = self.jacobianOfFutureStateToState(x, u)
         return np.matmul(np.matmul(jacobianState.T, 2 * self.Q + alpha * self.hessianProbToState(x, covariance, obstacles) + gamma * nextHessian), jacobianState)
 
-    def gradientCostToControlInput(self, x, u, c, covariance, obstacles, nextGradient = np.zeros((5, 1)), alpha = 1, gamma = 0.5):
-        res = np.matmul(self.gradientOfFutureStateToControl(x).T, self.gradientCostToState(x, u, c, covariance, obstacles, nextGradient = nextGradient, alpha = alpha, gamma = gamma))
+    def gradientCostToControlInput(self, x, u, c, covariance, obstacles, nextJacobian = np.zeros((1, 5)), alpha = 1, gamma = 0.5):
+        res = np.matmul(self.gradientOfFutureStateToControl(x).T, self.gradientCostToState(x, u, c, covariance, obstacles, nextJacobian = nextJacobian, alpha = alpha, gamma = gamma))
         return res
 
     def hessianCostToControlInput(self, x, u, c, covariance, obstacles, nextHessian = np.zeros((5, 5)), alpha = 1, gamma = 0.5):
@@ -411,11 +436,9 @@ class DifferentialDriveModel:
                       ),
             jacobianControlInput)
 
-    def getGradientMethod(self, x0, c, covariance, obstacles, nextGradient = np.zeros((1, 5)), alpha = 1, gamma = 0.5):
+    def getGradientMethod(self, x0, c, covariance, obstacles, nextJacobian = np.zeros((1, 5)), alpha = 1, gamma = 0.5):
         def gradient(x):
-            # print(x)
-            res = self.gradientCostToControlInput(x0, x.T, c, covariance, obstacles, nextGradient = nextGradient, alpha = alpha, gamma = gamma)
-            # print(type(res))
+            res = self.gradientCostToControlInput(x0, x.T, c, covariance, obstacles, nextJacobian = nextJacobian, alpha = alpha, gamma = gamma)
             return np.squeeze(np.asarray(res))
         return gradient
 
@@ -432,49 +455,66 @@ class DifferentialDriveModel:
         return cost
 
     def backwardsPass(self, trajectory, c, obstacles, alpha = 1, gamma = 0.5):
-        grad = np.matmul(self.gradientCostToState(trajectory[-1][0], trajectory[-1][1], c, trajectory[-1][2], obstacles, alpha = alpha, gamma = gamma), self.jacobianFutureStateToState(trajectory[-2][0]))
-        # hess = self.hessianCostToState(trajectory[-1][0], trajectory[-1][1], c, trajectory[-1][2], obstacles, alpha = alpha, gamma = gamma)
+        for i, state in list(enumerate(trajectory)):
+            trajectory[i][1] = trajectory[i][1].reshape((2, 1))
+        # print(self.gradientCostToState(trajectory[-1][0], trajectory[-1][1], c, trajectory[-1][2], obstacles, alpha = alpha, gamma = gamma))
+        grad = self.jacobianOfFutureStateToState(trajectory[-2][0], trajectory[-2][1]) @ self.gradientCostToState(trajectory[-1][0], trajectory[-1][1], c, trajectory[-1][2], obstacles, alpha = alpha, gamma = gamma)
+        # print("Grad: \n")
+        # print(grad)
+        hess = self.hessianCostToState(trajectory[-1][0], trajectory[-1][1], c, trajectory[-1][2], obstacles, alpha = alpha, gamma = gamma)
         isTrajectoryOptimized = False
         bounds = Bounds([-12, -12], [12, 12])
         for i, trajState in reversed(list(enumerate(trajectory))):
             x, u, covariance = trajState[0], trajState[1], trajState[2]
             cost = self.getCostMethod(x, c, covariance, obstacles, alpha, gamma)
-            gradient = self.getGradientMethod(x, c, covariance, obstacles, nextGradient = grad, alpha = alpha, gamma = gamma)
-            # hessian = self.getHessianMethod(x, c, covariance, obstacles, nextHessian = hess, alpha = alpha, gamma = gamma)
+            gradient = self.getGradientMethod(x, c, covariance, obstacles, nextJacobian = grad.T, alpha = alpha, gamma = gamma)
+            hessian = self.getHessianMethod(x, c, covariance, obstacles, nextHessian = hess, alpha = alpha, gamma = gamma)
+            # print("Marker: ")
+            # print(u.flatten())
+            # print(x)
+            # print(cost(u.flatten()))
+            # print(gradient(u.flatten()))
 
             # TODO: Potentially explore using BFGS() for hessian estimation of SR1 fails.
             # TODO: If the hessian stuff works, use that as the hessian estimates will likely beat SR1 speed-wise
-            res = minimize(cost, u, method = 'SLSQP', jac = gradient, hess = SR1(), bounds = bounds)
+            res = minimize(cost, u.T, method = 'SLSQP', jac = gradient, hess = hessian)
 
-            trajectory[i][1] = res.x
+            trajectory[i][1] = np.clip(res.x, -12, 12)
 
             if np.linalg.norm(gradient(trajectory[i][1])) < 0.5: # TODO: Tune this heuristic here for kickouts
                 isTrajectoryOptimized = True
 
-            grad = self.gradientCostToState(x, u, c, covariance, obstacles, nextGradient = grad, alpha = alpha, gamma = gamma)
+            grad = self.gradientCostToState(x, u, c, covariance, obstacles, nextJacobian = grad.T, alpha = alpha, gamma = gamma)
+            # print("Grad 2: \n", grad)
+            hess = self.hessianCostToState(x, u, c, covariance, obstacles, nextHessian = hess, alpha = alpha, gamma = gamma)
         return trajectory, isTrajectoryOptimized
 
     def forwardsPass(self, trajectory):
         x0 = trajectory[0][0]
         for i in range(1, len(trajectory)):
-            trajectory[i][0] = self.simulateCurvilinearModel(trajectory[i][0], trajectory[i][1])
+            trajectory[i][0] = self.simulateCurvilinearModel(trajectory[i - 1][0], trajectory[i - 1][1])
             x0 = trajectory[i][0]
         return trajectory
 
     def initializeTrajectory(self, x0, controlSequence, covariance):
         trajectory = [[x0, controlSequence[0], covariance]]
         for i in range(1, len(controlSequence)):
-            trajectory += [[self.simulateCurvilinearModel(trajectory[i - 1], controlSequence[i]), controlSequence[i], covariance]]
+            trajectory += [[self.simulateCurvilinearModel(trajectory[i - 1][0], controlSequence[i - 1]), controlSequence[i], covariance]]
         return trajectory
 
     # TODO: Figure out a way to initialize the control sequence to avoid local minima
     def optimizeTrajectory(self, x0, c, obstacles, controlSequence, covariance, alpha = 1, gamma = 0.5):
         trajectory = self.initializeTrajectory(x0, controlSequence, covariance)
+        prevTrajectory = []
         optimized = False
+        print([state[0] for state in trajectory])
+        optimize_iterations = 5
 
-        while not optimized:
+        for _ in range(optimize_iterations):
             trajectory, optimized = self.backwardsPass(trajectory, c, obstacles, alpha = alpha, gamma = gamma)
             trajectory = self.forwardsPass(trajectory)
+            if optimized:
+                break
 
         return trajectory
 

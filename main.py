@@ -21,7 +21,7 @@ gear_ratio = 1 / 3
 wheel_radius = 2 / 39.37
 bot_radius = 9 / 39.37
 
-Q = np.diag(np.array([2, 2, 2, 1, 1]))
+Q = np.diag(np.array([2, 2, 2, 1, 1], dtype=float))
 R = 0.5 * np.identity(2)
 
 m = 42 / 2.205
@@ -58,18 +58,32 @@ ox, oy = [vector[0, 0] for vector in obs], [vector[1, 0] for vector in obs]
 # plt.show()
 
 x0 = np.zeros((5, 1))
-cost = drive.getCostMethod(x0, c, 0.01 * np.identity(5), obs)
-gradient = drive.getGradientMethod(x0, c, 0.01 * np.identity(5), obs)
-u = np.array([12, 12])
+cost = drive.getCostMethod(x0, c, 0.01 * np.identity(5), [])
+gradient = drive.getGradientMethod(x0, c, 0.01 * np.identity(5), [])
+hess = drive.getHessianMethod(x0, c, 0.01 * np.identity(5), [])
+u = np.array([0, 0])
 bounds = Bounds([-12, -12], [12, 12])
 
 start = time.time()
 # res = minimize(cost, u, method = 'BFGS', jac = gradient, options = {'disp':True})
-res = minimize(cost, u, method = 'SLSQP', jac = gradient, hess = SR1(), bounds = bounds, options = {'disp':True})
+res = minimize(cost, u, method = 'SLSQP', jac = gradient, hess = hess, bounds = bounds, options = {'ftol': 1e-9, 'disp':True})
 end = time.time()
 
-print(res.x)
-print(drive.simulateCurvilinearModel(np.zeros((5, 1)), res.x))
+start2 = time.time()
+res2 = minimize(cost, u, method = 'trust-constr', jac = gradient, hess = hess, bounds = bounds, options = {'disp':True})
+end2 = time.time()
+
+start3 = time.time()
+res3 = minimize(cost, u, method = 'Newton-CG', jac = gradient, hess = hess, options = {'xtol':1e-8, 'disp':True})
+end3 = time.time()
+res3.x = np.clip(res3.x, -12, 12)
+
+print(np.matrix(res3.x).T)
+print(drive.simulateCurvilinearModel(np.zeros((5, 1)), res3.x))
+
+trajectoryLength = 10
+controlSequence = np.array([np.array([0, 0]) for _ in range(trajectoryLength)])
+print(drive.optimizeTrajectory(x0, c, [], controlSequence, 0.01 * np.identity(5)))
 
 fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
 x = np.arange(-12, 12, 0.25)
