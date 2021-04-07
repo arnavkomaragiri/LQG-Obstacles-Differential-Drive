@@ -21,7 +21,7 @@ gear_ratio = 1 / 3
 wheel_radius = 2 / 39.37
 bot_radius = 9 / 39.37
 
-Q = np.diag(np.array([2, 2, 2, 1, 1], dtype=float))
+Q = np.diag(np.array([20, 20, 20, 1, 1], dtype=float))
 R = 0.5 * np.identity(2)
 
 m = 42 / 2.205
@@ -34,7 +34,7 @@ drive = DifferentialDriveModel(m, bot_radius, J, Q, R, 0.00001 * np.identity(5),
 
 x = np.zeros((5, 1))
 x[2, 0] = math.pi / 2
-c = np.array([[2], [0], [0], [2], [2]])
+c = np.array([[2], [2], [0], [12], [12]])
 obstacles = [np.array([[-12 + 0.1 * i], [-12], [0]]) for i in range(0, 240)]
 
 # res, ellipseSequence = drive.isConfigurationValid(x, c, obstacles)
@@ -81,9 +81,20 @@ res3.x = np.clip(res3.x, -12, 12)
 print(np.matrix(res3.x).T)
 print(drive.simulateCurvilinearModel(np.zeros((5, 1)), res3.x))
 
-trajectoryLength = 10
+dt = 0.1
+lookahead_time = 10
+trajectoryLength = int(lookahead_time / dt)
+print(type(trajectoryLength))
 controlSequence = np.array([np.array([0, 0]) for _ in range(trajectoryLength)])
-print(drive.optimizeTrajectory(x0, c, [], controlSequence, 0.01 * np.identity(5)))
+traj_start = time.time()
+traj = drive.optimizeTrajectory(x0, c, [], controlSequence, 0.01 * np.identity(5))
+traj_end = time.time()
+print(traj_end - traj_start)
+print(traj)
+
+traj_x, traj_y = [t[0][0, 0] for t in traj], [t[0][1, 0] for t in traj]
+plt.plot(traj_x, traj_y, color = 'red')
+plt.show()
 
 fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
 x = np.arange(-12, 12, 0.25)
@@ -97,4 +108,4 @@ surf = ax.plot_surface(x, y, z, cmap=cm.coolwarm,
 ax.zaxis.set_major_locator(LinearLocator(10))
 ax.zaxis.set_major_formatter('{x:.02f}')
 fig.colorbar(surf, shrink=0.5, aspect=5)
-plt.show()
+# plt.show()

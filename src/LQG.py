@@ -5,6 +5,8 @@ import numpy as np
 from math import *
 from numba.experimental import jitclass
 from numba import int32, float32, float64, types
+from itertools import islice
+from src.Map import *
 
 class StateSpaceModel:
     def __init__(self, A, B, C, Q, R):
@@ -383,6 +385,9 @@ class DifferentialDriveModel:
 
     def collisionProb(self, x, covariance, obstacles):
         totalSuccessProb = 1.0
+        num_obs = 10
+        if isinstance(obstacles, Map):
+            obstacles = islice(iter(obstacles.setCurrentPos(x)), num_obs)
 
         for obs in obstacles:
             probOfCollision = self.getSingleObsCollisionProb(x, covariance, obs)
@@ -393,6 +398,10 @@ class DifferentialDriveModel:
     def gradientProbToState(self, x, covariance, obstacles):
         grad = np.zeros((5, 1))
 
+        num_obs = 10
+        if isinstance(obstacles, Map):
+            obstacles = islice(iter(obstacles.setCurrentPos(x)), num_obs)
+
         for obs in obstacles:
             grad += self.getSingleObsCollisionProb(x, covariance, obs) * np.matmul(np.linalg.inv(covariance), np.concatenate((obs, np.zeros((3, 1))), axis=0) - x)
         # print("Prob To State: ", grad)
@@ -401,8 +410,13 @@ class DifferentialDriveModel:
     def hessianProbToState(self, x, covariance, obstacles):
         hess = np.zeros((5, 5))
         precision = np.linalg.inv(covariance)
+
+        num_obs = 10
+        if isinstance(obstacles, Map):
+            obstacles = islice(iter(obstacles.setCurrentPos(x)), num_obs)
+
         for obs in obstacles:
-            offset = obs - x
+            offset = np.append(obs, np.zeros((3, 1)), axis=0) - x
             hess += self.getSingleObsCollisionProb(x, covariance, obs) * (precision @ (np.identity(5) + (offset @ offset.T @ precision.T)))
         return hess
 
@@ -412,7 +426,6 @@ class DifferentialDriveModel:
 
     def gradientCostToState(self, x, u, c, covariance, obstacles, nextJacobian = np.zeros((1, 5)), alpha = 1, gamma = 0.5):
         if nextJacobian.shape != (1, 5):
-            print(nextJacobian)
             raise ValueError("Incorrect Shape for Next Gradient")
         nextState = self.simulateCurvilinearModel(x, u)
         # TODO: Implement hessian of gaussian PDF
@@ -454,6 +467,7 @@ class DifferentialDriveModel:
             return res[0, 0]
         return cost
 
+
     def backwardsPass(self, trajectory, c, obstacles, alpha = 1, gamma = 0.5):
         for i, state in list(enumerate(trajectory)):
             trajectory[i][1] = trajectory[i][1].reshape((2, 1))
@@ -477,9 +491,10 @@ class DifferentialDriveModel:
 
             # TODO: Potentially explore using BFGS() for hessian estimation of SR1 fails.
             # TODO: If the hessian stuff works, use that as the hessian estimates will likely beat SR1 speed-wise
-            res = minimize(cost, u.T, method = 'SLSQP', jac = gradient, hess = hessian)
+            res = minimize(cost, u.T, method = 'Newton-CG', jac = gradient, hess = hessian)
 
             trajectory[i][1] = np.clip(res.x, -12, 12)
+            print(i, ":", trajectory[i][1])
 
             if np.linalg.norm(gradient(trajectory[i][1])) < 0.5: # TODO: Tune this heuristic here for kickouts
                 isTrajectoryOptimized = True
@@ -503,7 +518,7 @@ class DifferentialDriveModel:
         return trajectory
 
     # TODO: Figure out a way to initialize the control sequence to avoid local minima
-    def optimizeTrajectory(self, x0, c, obstacles, controlSequence, covariance, alpha = 1, gamma = 0.5):
+    def optimizeTrajectory(self, x0, c, obstacles, controlSequence, covariance, alpha = 1, gamma = 1.0):
         trajectory = self.initializeTrajectory(x0, controlSequence, covariance)
         prevTrajectory = []
         optimized = False

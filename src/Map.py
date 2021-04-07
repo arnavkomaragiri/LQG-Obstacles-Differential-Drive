@@ -200,9 +200,12 @@ class Map:
         return res
 
     def __iter__(self):
-        obsHeap = [(np.linalg.norm(self.x[:2] - obs), obs) for obs in self.getObstacles()]
-        heapq.heapify(obsHeap)
-        return Map(obstacles = self.obstacles, max_dim = self.max_dim, x = self.x, obsHeap = obsHeap)
+        obsHeap = [(np.linalg.norm(self.x[:2] - obs), list(obs)) for obs in self.getObstacles()]
+        lst = []
+        for obs in obsHeap:
+            heapq.heappush(lst, obs)
+        heapq.heapify(lst)
+        return Map(obstacles = self.obstacles, max_dim = self.max_dim, x = self.x, obsHeap = lst)
 
     def __next__(self):
         if len(self.obsHeap) > 0:
