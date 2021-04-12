@@ -34,7 +34,6 @@ drive = DifferentialDriveModel(m, bot_radius, J, Q, R, 0.00001 * np.identity(5),
 
 x = np.zeros((5, 1))
 x[2, 0] = math.pi / 2
-c = np.array([[2], [2], [0], [12], [12]])
 obstacles = [np.array([[-12 + 0.1 * i], [-12], [0]]) for i in range(0, 240)]
 
 # res, ellipseSequence = drive.isConfigurationValid(x, c, obstacles)
@@ -56,6 +55,8 @@ ox, oy = [vector[0, 0] for vector in obs], [vector[1, 0] for vector in obs]
 # print(tmpMap.isConfigurationValid(drive, c, ellipseSequence = ellipseSequence)[0])
 # print(tmpMap.probabilityOfSuccess(drive, c, pointCloudSequence = pointCloudSequence)[0])
 # plt.show()
+
+c = np.array([[2], [0], [0], [0], [0]])
 
 x0 = np.zeros((5, 1))
 cost = drive.getCostMethod(x0, c, 0.01 * np.identity(5), [])
@@ -85,27 +86,40 @@ dt = 0.1
 lookahead_time = 10
 trajectoryLength = int(lookahead_time / dt)
 print(type(trajectoryLength))
+c = np.array([[2], [0], [0]])
 controlSequence = np.array([np.array([0, 0]) for _ in range(trajectoryLength)])
 traj_start = time.time()
-traj = drive.optimizeTrajectory(x0, c, [], controlSequence, 0.01 * np.identity(5))
+traj, costs = drive.optimizeTrajectory(x0, c, [], controlSequence, 0.01 * np.identity(5))
 traj_end = time.time()
 print(traj_end - traj_start)
 print(traj)
+
+tmp = [np.array([6, 12]) for _ in range(20)]
+# traj = drive.initializeTrajectory(x0, tmp, 0.01 * np.identity(5))
 
 traj_x, traj_y = [t[0][0, 0] for t in traj], [t[0][1, 0] for t in traj]
 plt.plot(traj_x, traj_y, color = 'red')
 plt.show()
 
-fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
-x = np.arange(-12, 12, 0.25)
-y = np.arange(-12, 12, 0.25)
-x, y = np.meshgrid(x, y)
-positions = np.vstack([x.ravel(), y.ravel()])
-z = np.array([cost(u) for u in positions.T]).reshape(x.shape)
-gz = np.array([np.linalg.norm(gradient(u)) for u in positions.T]).reshape(x.shape)
-surf = ax.plot_surface(x, y, z, cmap=cm.coolwarm,
-                       linewidth=0, antialiased=False)
-ax.zaxis.set_major_locator(LinearLocator(10))
-ax.zaxis.set_major_formatter('{x:.02f}')
-fig.colorbar(surf, shrink=0.5, aspect=5)
-# plt.show()
+print(costs.keys())
+print("Please Enter Index of Cost to Analyze")
+while input("Would you like to continue: ") != "n":
+    i = -1
+    while not i in costs:
+        i = int(input("Please Enter Index of Cost to Analyze: "))
+    cost = costs[i]
+    print(traj[i][1])
+
+    fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+    x = np.arange(-12, 12, 0.25)
+    y = np.arange(-12, 12, 0.25)
+    x, y = np.meshgrid(x, y)
+    positions = np.vstack([x.ravel(), y.ravel()])
+    z = np.array([cost(u) for u in positions.T]).reshape(x.shape)
+    gz = np.array([np.linalg.norm(gradient(u)) for u in positions.T]).reshape(x.shape)
+    surf = ax.plot_surface(x, y, z, cmap=cm.coolwarm,
+                           linewidth=0, antialiased=False)
+    ax.zaxis.set_major_locator(LinearLocator(10))
+    ax.zaxis.set_major_formatter('{x:.02f}')
+    fig.colorbar(surf, shrink=0.5, aspect=5)
+    plt.show()

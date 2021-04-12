@@ -422,18 +422,24 @@ class DifferentialDriveModel:
 
     def cost(self, x, u, c, covariance, obstacles, nextValue = 0, alpha = 1, gamma = 0.5): # TODO: Tune hyperparameters on bellman cost function
         nextState = self.simulateCurvilinearModel(x, u)
+        if c.shape == (3, 1):
+            c = np.concatenate((c, nextState[-3:-1]), axis = 0)
         return np.matmul(np.matmul((c - nextState).T, self.Q), (c - nextState)) + alpha * self.collisionProb(nextState, covariance, obstacles) + (gamma * nextValue)
 
     def gradientCostToState(self, x, u, c, covariance, obstacles, nextJacobian = np.zeros((1, 5)), alpha = 1, gamma = 0.5):
         if nextJacobian.shape != (1, 5):
             raise ValueError("Incorrect Shape for Next Gradient")
         nextState = self.simulateCurvilinearModel(x, u)
+        if c.shape == (3, 1):
+            c = np.concatenate((c, nextState[-3:-1]), axis = 0)
         # TODO: Implement hessian of gaussian PDF
         res = -2 * np.matmul(self.Q, c - nextState) + (alpha * self.gradientProbToState(nextState, covariance, obstacles)) + (gamma * nextJacobian.T)
         return res
 
     def hessianCostToState(self, x, u, c, covariance, obstacles, nextHessian = np.zeros((5, 5)), alpha = 1, gamma = 0.5):
         nextState = self.simulateCurvilinearModel(x, u)
+        if c.shape == (3, 1):
+            c = np.concatenate((c, nextState[-3:-1]), axis = 0)
         jacobianState = self.jacobianOfFutureStateToState(x, u)
         return np.matmul(np.matmul(jacobianState.T, 2 * self.Q + alpha * self.hessianProbToState(x, covariance, obstacles) + gamma * nextHessian), jacobianState)
 
@@ -478,6 +484,7 @@ class DifferentialDriveModel:
         hess = self.hessianCostToState(trajectory[-1][0], trajectory[-1][1], c, trajectory[-1][2], obstacles, alpha = alpha, gamma = gamma)
         isTrajectoryOptimized = False
         bounds = Bounds([-12, -12], [12, 12])
+        costs = {}
         for i, trajState in reversed(list(enumerate(trajectory))):
             x, u, covariance = trajState[0], trajState[1], trajState[2]
             cost = self.getCostMethod(x, c, covariance, obstacles, alpha, gamma)
@@ -494,7 +501,8 @@ class DifferentialDriveModel:
             res = minimize(cost, u.T, method = 'Newton-CG', jac = gradient, hess = hessian)
 
             trajectory[i][1] = np.clip(res.x, -12, 12)
-            print(i, ":", trajectory[i][1])
+            if ((trajectory[i][1] < 12).all() and (trajectory[i][1] > -12).all()):
+                costs[i] = cost
 
             if np.linalg.norm(gradient(trajectory[i][1])) < 0.5: # TODO: Tune this heuristic here for kickouts
                 isTrajectoryOptimized = True
@@ -502,7 +510,7 @@ class DifferentialDriveModel:
             grad = self.gradientCostToState(x, u, c, covariance, obstacles, nextJacobian = grad.T, alpha = alpha, gamma = gamma)
             # print("Grad 2: \n", grad)
             hess = self.hessianCostToState(x, u, c, covariance, obstacles, nextHessian = hess, alpha = alpha, gamma = gamma)
-        return trajectory, isTrajectoryOptimized
+        return trajectory, isTrajectoryOptimized, costs
 
     def forwardsPass(self, trajectory):
         x0 = trajectory[0][0]
@@ -526,12 +534,12 @@ class DifferentialDriveModel:
         optimize_iterations = 5
 
         for _ in range(optimize_iterations):
-            trajectory, optimized = self.backwardsPass(trajectory, c, obstacles, alpha = alpha, gamma = gamma)
+            trajectory, optimized, costs = self.backwardsPass(trajectory, c, obstacles, alpha = alpha, gamma = gamma)
             trajectory = self.forwardsPass(trajectory)
             if optimized:
                 break
 
-        return trajectory
+        return trajectory, costs
 
     def getRotation(self, theta):
         return np.matrix([[cos(theta), -sin(theta), 0],
