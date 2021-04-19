@@ -424,6 +424,8 @@ class DifferentialDriveModel:
         nextState = self.simulateCurvilinearModel(x, u)
         if c.shape == (3, 1):
             c = np.concatenate((c, nextState[-3:-1]), axis = 0)
+        print("U: ", u)
+        print((c - nextState).T @ self.Q @ (c - nextState))
         return np.matmul(np.matmul((c - nextState).T, self.Q), (c - nextState)) + alpha * self.collisionProb(nextState, covariance, obstacles) + (gamma * nextValue)
 
     def gradientCostToState(self, x, u, c, covariance, obstacles, nextJacobian = np.zeros((1, 5)), alpha = 1, gamma = 0.5):
@@ -461,6 +463,12 @@ class DifferentialDriveModel:
             return np.squeeze(np.asarray(res))
         return gradient
 
+    def getJacobianMethod(self, x0, c, covariance, obstacles, nextJacobian = np.zeros((1, 5)), alpha = 1, gamma = 0.5):
+        def jac(x):
+            res = self.gradientCostToControlInput(x0, x.T, c, covariance, obstacles, nextJacobian = nextJacobian, alpha = alpha, gamma = gamma)
+            return np.squeeze(np.asarray(res.T))
+        return jac
+
     def getHessianMethod(self, x0, c, covariance, obstacles, nextHessian = np.zeros((5, 5)), alpha = 1, gamma = 0.5):
         def hessian(x):
             return self.hessianCostToControlInput(x0, x, c, covariance, obstacles, nextHessian = nextHessian, alpha = alpha, gamma = gamma)
@@ -485,10 +493,11 @@ class DifferentialDriveModel:
         isTrajectoryOptimized = False
         bounds = Bounds([-12, -12], [12, 12])
         costs = {}
+        val = 0
         for i, trajState in reversed(list(enumerate(trajectory))):
             x, u, covariance = trajState[0], trajState[1], trajState[2]
-            cost = self.getCostMethod(x, c, covariance, obstacles, alpha, gamma)
-            gradient = self.getGradientMethod(x, c, covariance, obstacles, nextJacobian = grad.T, alpha = alpha, gamma = gamma)
+            cost = self.getCostMethod(x, c, covariance, obstacles, nextValue = val, alpha = alpha, gamma = gamma)
+            jac = self.getJacobianMethod(x, c, covariance, obstacles, nextJacobian = grad.T, alpha = alpha, gamma = gamma)
             hessian = self.getHessianMethod(x, c, covariance, obstacles, nextHessian = hess, alpha = alpha, gamma = gamma)
             # print("Marker: ")
             # print(u.flatten())
@@ -498,15 +507,16 @@ class DifferentialDriveModel:
 
             # TODO: Potentially explore using BFGS() for hessian estimation of SR1 fails.
             # TODO: If the hessian stuff works, use that as the hessian estimates will likely beat SR1 speed-wise
-            res = minimize(cost, u.T, method = 'Newton-CG', jac = gradient, hess = hessian)
+            res = minimize(cost, u, method = 'Newton-CG', jac = jac, hess = hessian)
 
             trajectory[i][1] = np.clip(res.x, -12, 12)
             if ((trajectory[i][1] < 12).all() and (trajectory[i][1] > -12).all()):
                 costs[i] = cost
 
-            if np.linalg.norm(gradient(trajectory[i][1])) < 0.5: # TODO: Tune this heuristic here for kickouts
+            if np.linalg.norm(jac(trajectory[i][1])) < 0.5: # TODO: Tune this heuristic here for kickouts
                 isTrajectoryOptimized = True
 
+            val = cost(trajectory[i][1])
             grad = self.gradientCostToState(x, u, c, covariance, obstacles, nextJacobian = grad.T, alpha = alpha, gamma = gamma)
             # print("Grad 2: \n", grad)
             hess = self.hessianCostToState(x, u, c, covariance, obstacles, nextHessian = hess, alpha = alpha, gamma = gamma)
@@ -526,7 +536,7 @@ class DifferentialDriveModel:
         return trajectory
 
     # TODO: Figure out a way to initialize the control sequence to avoid local minima
-    def optimizeTrajectory(self, x0, c, obstacles, controlSequence, covariance, alpha = 1, gamma = 1.0):
+    def optimizeTrajectory(self, x0, c, obstacles, controlSequence, covariance, alpha = 1, gamma = 0.5):
         trajectory = self.initializeTrajectory(x0, controlSequence, covariance)
         prevTrajectory = []
         optimized = False

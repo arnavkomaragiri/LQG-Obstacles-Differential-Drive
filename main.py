@@ -56,7 +56,7 @@ ox, oy = [vector[0, 0] for vector in obs], [vector[1, 0] for vector in obs]
 # print(tmpMap.probabilityOfSuccess(drive, c, pointCloudSequence = pointCloudSequence)[0])
 # plt.show()
 
-c = np.array([[2], [0], [0], [0], [0]])
+c = np.array([[2], [0], [0], [12], [12]])
 
 x0 = np.zeros((5, 1))
 cost = drive.getCostMethod(x0, c, 0.01 * np.identity(5), [])
